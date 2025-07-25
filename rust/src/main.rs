@@ -49,11 +49,11 @@ fn main() -> bitcoincore_rpc::Result<()> {
     }
 
     let miner_rpc = Client::new(
-        &format!("{}/wallet/Miner", RPC_URL),
+        &format!("{RPC_URL}/wallet/Miner"),
         Auth::UserPass(RPC_USER.to_owned(), RPC_PASS.to_owned()),
     )?;
     let trader_rpc = Client::new(
-        &format!("{}/wallet/Trader", RPC_URL),
+        &format!("{RPC_URL}/wallet/Trader"),
         Auth::UserPass(RPC_USER.to_owned(), RPC_PASS.to_owned()),
     )?;
 
@@ -72,10 +72,7 @@ fn main() -> bitcoincore_rpc::Result<()> {
         blocks_mined += 1;
     }
 
-    println!(
-        "Mined {} blocks to generate spendable balance",
-        blocks_mined
-    );
+    println!("Mined {blocks_mined} blocks to generate spendable balance");
 
     let miner_balance = miner_rpc.get_balance(None, None)?;
     println!("Miner wallet balance: {} BTC", miner_balance.to_btc());
@@ -84,8 +81,8 @@ fn main() -> bitcoincore_rpc::Result<()> {
         .get_new_address(Some("Received"), None)?
         .assume_checked();
 
-    println!("Miner address: {}", miner_address);
-    println!("Trader address: {}", trader_address);
+    println!("Miner address: {miner_address}");
+    println!("Trader address: {trader_address}");
 
     let txid = miner_rpc.send_to_address(
         &trader_address,
@@ -98,10 +95,10 @@ fn main() -> bitcoincore_rpc::Result<()> {
         None,
     )?;
 
-    println!("Transaction sent with txid: {}", txid);
+    println!("Transaction sent with txid: {txid}");
 
     let mempool = miner_rpc.get_mempool_entry(&txid)?;
-    println!("Transaction in mempool: {:?}", mempool);
+    println!("Transaction in mempool: {mempool:?}");
 
     let block_hashes = miner_rpc.generate_to_address(1, &miner_address)?;
     let confirmed_block_hash = block_hashes[0];
@@ -168,15 +165,15 @@ fn main() -> bitcoincore_rpc::Result<()> {
 
     // Write to out.txt in the specified format
     let mut file = File::create("../out.txt")?;
-    writeln!(file, "{}", txid)?;
-    writeln!(file, "{}", miner_input_address)?;
-    writeln!(file, "{}", miner_input_amount)?;
-    writeln!(file, "{}", trader_input_address)?;
-    writeln!(file, "{}", trader_input_amount)?;
-    writeln!(file, "{}", miner_change_address)?;
-    writeln!(file, "{}", miner_change_amount)?;
-    writeln!(file, "{}", fee)?;
-    writeln!(file, "{}", block_height)?;
+    writeln!(file, "{txid}")?;
+    writeln!(file, "{miner_input_address}")?;
+    writeln!(file, "{miner_input_amount}")?;
+    writeln!(file, "{trader_input_address}")?;
+    writeln!(file, "{trader_input_amount}")?;
+    writeln!(file, "{miner_change_address}")?;
+    writeln!(file, "{miner_change_amount}")?;
+    writeln!(file, "{fee}")?;
+    writeln!(file, "{block_height}")?;
     writeln!(file, "{}", block_hash.unwrap())?;
 
     Ok(())
