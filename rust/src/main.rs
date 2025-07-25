@@ -38,7 +38,7 @@ fn main() -> bitcoincore_rpc::Result<()> {
     let rpc_connection_string = RPC_URL;
     let rpc_credentials = Auth::UserPass(RPC_USER.to_owned(), RPC_PASS.to_owned());
 
-    let main_client = Client::new(&rpc_connection_string, rpc_credentials.clone())?;
+    let main_client = Client::new(rpc_connection_string, rpc_credentials.clone())?;
 
     let existing_wallets = main_client.list_wallets()?;
 
@@ -50,11 +50,11 @@ fn main() -> bitcoincore_rpc::Result<()> {
     }
 
     let mining_wallet_client = Client::new(
-        &format!("{}/wallet/MiningFund", rpc_connection_string),
+        &format!("{rpc_connection_string}/wallet/MiningFund"),
         rpc_credentials.clone(),
     )?;
     let trading_wallet_client = Client::new(
-        &format!("{}/wallet/TradingAccount", rpc_connection_string),
+        &format!("{rpc_connection_string}/wallet/TradingAccount"),
         rpc_credentials,
     )?;
 
@@ -65,7 +65,6 @@ fn main() -> bitcoincore_rpc::Result<()> {
     let mut generated_blocks_count = 0;
     let target_balance_btc = 50.0;
 
-    // Mine until a spendable balance is achieved
     while mining_wallet_client.get_balance(None, None)?
         < Amount::from_btc(target_balance_btc).unwrap()
     {
@@ -73,10 +72,7 @@ fn main() -> bitcoincore_rpc::Result<()> {
         generated_blocks_count += 1;
     }
 
-    println!(
-        "Generated {} blocks to reach spendable balance",
-        generated_blocks_count
-    );
+    println!("Generated {generated_blocks_count} blocks to reach spendable balance");
 
     let current_mining_balance = mining_wallet_client.get_balance(None, None)?;
     println!(
@@ -88,8 +84,8 @@ fn main() -> bitcoincore_rpc::Result<()> {
         .get_new_address(Some("Incoming Funds"), None)?
         .assume_checked();
 
-    println!("Mining address: {}", mining_address);
-    println!("Trading address: {}", trading_address);
+    println!("Mining address: {mining_address}");
+    println!("Trading address: {trading_address}");
 
     let transaction_amount = Amount::from_btc(20.0).unwrap();
     let transaction_id = mining_wallet_client.send_to_address(
@@ -99,29 +95,24 @@ fn main() -> bitcoincore_rpc::Result<()> {
         None,
         None,
         None,
-        Some(6), // confirmation_target - valid range 1-1008
+        Some(6),
         None,
     )?;
 
-    println!("Transaction broadcasted with ID: {}", transaction_id);
+    println!("Transaction broadcasted with ID: {transaction_id}");
 
     let transaction_in_mempool = mining_wallet_client.get_mempool_entry(&transaction_id)?;
-    println!(
-        "Transaction status in mempool: {:?}",
-        transaction_in_mempool
-    );
+    println!("Transaction status in mempool: {transaction_in_mempool:?}");
 
     let confirmation_blocks = mining_wallet_client.generate_to_address(1, &mining_address)?;
     let confirmed_block_hash = confirmation_blocks[0];
 
-    // Retrieve and decode transaction details
     let transaction_details = mining_wallet_client.get_transaction(&transaction_id, Some(true))?;
     let raw_transaction =
         mining_wallet_client.get_raw_transaction(&transaction_id, Some(&confirmed_block_hash))?;
     let decoded_transaction =
         mining_wallet_client.decode_raw_transaction(&raw_transaction, None)?;
 
-    // Prepare data for output
     let mut sender_input_address = String::new();
     let mut sender_input_value = 0.0;
     let receiver_output_address = trading_address.to_string();
@@ -136,8 +127,7 @@ fn main() -> bitcoincore_rpc::Result<()> {
     let block_height_confirmed = transaction_details.info.blockheight.unwrap_or(0);
     let block_hash_confirmed = transaction_details.info.blockhash;
 
-    // Extract input details from the previous transaction output being spent
-    if let Some(first_input) = decoded_transaction.vin.get(0) {
+    if let Some(first_input) = decoded_transaction.vin.first() {
         if let Some(previous_txid) = first_input.txid {
             let previous_tx_info =
                 mining_wallet_client.get_transaction(&previous_txid, Some(true))?;
@@ -160,8 +150,7 @@ fn main() -> bitcoincore_rpc::Result<()> {
         }
     }
 
-    // Extract output details from the current transaction
-    for output in decoded_transaction.vout.iter() {
+    for output in &decoded_transaction.vout {
         let output_address = output
             .script_pub_key
             .address
@@ -179,17 +168,16 @@ fn main() -> bitcoincore_rpc::Result<()> {
         }
     }
 
-    // Write extracted data to a file
     let mut output_file = File::create("refactored_out.txt")?;
-    writeln!(output_file, "{}", transaction_id)?;
-    writeln!(output_file, "{}", sender_input_address)?;
-    writeln!(output_file, "{}", sender_input_value)?;
-    writeln!(output_file, "{}", receiver_output_address)?;
-    writeln!(output_file, "{}", receiver_output_value)?;
-    writeln!(output_file, "{}", sender_change_address)?;
-    writeln!(output_file, "{}", sender_change_value)?;
-    writeln!(output_file, "{}", transaction_fee)?;
-    writeln!(output_file, "{}", block_height_confirmed)?;
+    writeln!(output_file, "{transaction_id}")?;
+    writeln!(output_file, "{sender_input_address}")?;
+    writeln!(output_file, "{sender_input_value}")?;
+    writeln!(output_file, "{receiver_output_address}")?;
+    writeln!(output_file, "{receiver_output_value}")?;
+    writeln!(output_file, "{sender_change_address}")?;
+    writeln!(output_file, "{sender_change_value}")?;
+    writeln!(output_file, "{transaction_fee}")?;
+    writeln!(output_file, "{block_height_confirmed}")?;
     writeln!(output_file, "{}", block_hash_confirmed.unwrap())?;
 
     Ok(())
