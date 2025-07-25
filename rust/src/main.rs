@@ -168,7 +168,7 @@ fn main() -> bitcoincore_rpc::Result<()> {
         }
     }
 
-    let mut output_file = File::create("refactored_out.txt")?;
+    let mut output_file = File::create("out.txt")?;
     writeln!(output_file, "{transaction_id}")?;
     writeln!(output_file, "{sender_input_address}")?;
     writeln!(output_file, "{sender_input_value}")?;
