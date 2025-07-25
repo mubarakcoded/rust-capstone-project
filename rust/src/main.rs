@@ -35,62 +35,61 @@ fn send(rpc: &Client, addr: &str) -> bitcoincore_rpc::Result<String> {
 }
 
 fn main() -> bitcoincore_rpc::Result<()> {
-    let rpc_connection_string = RPC_URL;
-    let rpc_credentials = Auth::UserPass(RPC_USER.to_owned(), RPC_PASS.to_owned());
+    let rpc_root = Client::new(
+        RPC_URL,
+        Auth::UserPass(RPC_USER.to_owned(), RPC_PASS.to_owned()),
+    )?;
 
-    let main_client = Client::new(rpc_connection_string, rpc_credentials.clone())?;
-
-    let existing_wallets = main_client.list_wallets()?;
-
-    let wallet_names = ["MiningFund", "TradingAccount"];
-    for wallet_name in &wallet_names {
-        if !existing_wallets.contains(&wallet_name.to_string()) {
-            main_client.create_wallet(wallet_name, None, None, None, None)?;
-        }
+    let wallets = rpc_root.list_wallets()?;
+    if !wallets.contains(&"Miner".to_string()) {
+        rpc_root.create_wallet("Miner", None, None, None, None)?;
+    }
+    if !wallets.contains(&"Trader".to_string()) {
+        rpc_root.create_wallet("Trader", None, None, None, None)?;
     }
 
-    let mining_wallet_client = Client::new(
-        &format!("{rpc_connection_string}/wallet/MiningFund"),
-        rpc_credentials.clone(),
+    let miner_rpc = Client::new(
+        &format!("{}/wallet/Miner", RPC_URL),
+        Auth::UserPass(RPC_USER.to_owned(), RPC_PASS.to_owned()),
     )?;
-    let trading_wallet_client = Client::new(
-        &format!("{rpc_connection_string}/wallet/TradingAccount"),
-        rpc_credentials,
+    let trader_rpc = Client::new(
+        &format!("{}/wallet/Trader", RPC_URL),
+        Auth::UserPass(RPC_USER.to_owned(), RPC_PASS.to_owned()),
     )?;
 
-    let mining_address = mining_wallet_client
-        .get_new_address(Some("Initial Mining Payout"), None)?
+    let miner_address = miner_rpc
+        .get_new_address(Some("Mining Reward"), None)?
         .assume_checked();
 
-    let mut generated_blocks_count = 0;
-    let target_balance_btc = 50.0;
-
-    while mining_wallet_client.get_balance(None, None)?
-        < Amount::from_btc(target_balance_btc).unwrap()
-    {
-        mining_wallet_client.generate_to_address(1, &mining_address)?;
-        generated_blocks_count += 1;
+    let mut blocks_mined = 0;
+    while miner_rpc.get_balance(None, None)? == Amount::ZERO {
+        miner_rpc.generate_to_address(1, &miner_address)?;
+        blocks_mined += 1;
     }
 
-    println!("Generated {generated_blocks_count} blocks to reach spendable balance");
+    while miner_rpc.get_balance(None, None)? < Amount::from_btc(50.0).unwrap() {
+        miner_rpc.generate_to_address(1, &miner_address)?;
+        blocks_mined += 1;
+    }
 
-    let current_mining_balance = mining_wallet_client.get_balance(None, None)?;
     println!(
-        "Mining wallet current balance: {} BTC",
-        current_mining_balance.to_btc()
+        "Mined {} blocks to generate spendable balance",
+        blocks_mined
     );
 
-    let trading_address = trading_wallet_client
-        .get_new_address(Some("Incoming Funds"), None)?
+    let miner_balance = miner_rpc.get_balance(None, None)?;
+    println!("Miner wallet balance: {} BTC", miner_balance.to_btc());
+
+    let trader_address = trader_rpc
+        .get_new_address(Some("Received"), None)?
         .assume_checked();
 
-    println!("Mining address: {mining_address}");
-    println!("Trading address: {trading_address}");
+    println!("Miner address: {}", miner_address);
+    println!("Trader address: {}", trader_address);
 
-    let transaction_amount = Amount::from_btc(20.0).unwrap();
-    let transaction_id = mining_wallet_client.send_to_address(
-        &trading_address,
-        transaction_amount,
+    let txid = miner_rpc.send_to_address(
+        &trader_address,
+        Amount::from_btc(20.0).unwrap(),
         None,
         None,
         None,
@@ -99,86 +98,86 @@ fn main() -> bitcoincore_rpc::Result<()> {
         None,
     )?;
 
-    println!("Transaction broadcasted with ID: {transaction_id}");
+    println!("Transaction sent with txid: {}", txid);
 
-    let transaction_in_mempool = mining_wallet_client.get_mempool_entry(&transaction_id)?;
-    println!("Transaction status in mempool: {transaction_in_mempool:?}");
+    let mempool = miner_rpc.get_mempool_entry(&txid)?;
+    println!("Transaction in mempool: {:?}", mempool);
 
-    let confirmation_blocks = mining_wallet_client.generate_to_address(1, &mining_address)?;
-    let confirmed_block_hash = confirmation_blocks[0];
+    let block_hashes = miner_rpc.generate_to_address(1, &miner_address)?;
+    let confirmed_block_hash = block_hashes[0];
 
-    let transaction_details = mining_wallet_client.get_transaction(&transaction_id, Some(true))?;
-    let raw_transaction =
-        mining_wallet_client.get_raw_transaction(&transaction_id, Some(&confirmed_block_hash))?;
-    let decoded_transaction =
-        mining_wallet_client.decode_raw_transaction(&raw_transaction, None)?;
+    let tx = miner_rpc.get_transaction(&txid, Some(true))?;
+    let raw_tx = miner_rpc.get_raw_transaction(&txid, Some(&confirmed_block_hash))?;
+    let decoded_tx = miner_rpc.decode_raw_transaction(&raw_tx, None)?;
 
-    let mut sender_input_address = String::new();
-    let mut sender_input_value = 0.0;
-    let receiver_output_address = trading_address.to_string();
-    let mut receiver_output_value = 0.0;
-    let mut sender_change_address = String::new();
-    let mut sender_change_value = 0.0;
-    let transaction_fee = transaction_details
+    let mut miner_input_address = String::new();
+    let mut miner_input_amount = 0.0;
+    let trader_input_address = trader_address.to_string();
+    let mut trader_input_amount = 0.0;
+    let mut miner_change_address = String::new();
+    let mut miner_change_amount = 0.0;
+    let fee = tx
         .fee
         .unwrap_or_else(|| SignedAmount::from_sat(0))
         .to_btc()
         .abs();
-    let block_height_confirmed = transaction_details.info.blockheight.unwrap_or(0);
-    let block_hash_confirmed = transaction_details.info.blockhash;
+    let block_height = tx.info.blockheight.unwrap_or(0);
+    let block_hash = tx.info.blockhash;
 
-    if let Some(first_input) = decoded_transaction.vin.first() {
-        if let Some(previous_txid) = first_input.txid {
-            let previous_tx_info =
-                mining_wallet_client.get_transaction(&previous_txid, Some(true))?;
-            let raw_previous_tx = previous_tx_info.hex;
-            let previous_decoded_tx =
-                mining_wallet_client.decode_raw_transaction(&raw_previous_tx, None)?;
+    // Extract input details (from the previous transaction output being spent)
+    if !decoded_tx.vin.is_empty() {
+        let vin = &decoded_tx.vin[0];
+        if let Some(prev_txid) = vin.txid {
+            let prev_tx_info = miner_rpc.get_transaction(&prev_txid, Some(true))?;
+            let raw_prev_tx = prev_tx_info.hex;
+            let prev_decoded = miner_rpc.decode_raw_transaction(&raw_prev_tx, None)?;
 
-            if let Some(output_index) = first_input.vout {
-                if let Some(output_detail) = previous_decoded_tx.vout.get(output_index as usize) {
-                    sender_input_address = output_detail
+            if let Some(vout_idx) = vin.vout {
+                if let Some(vout) = prev_decoded.vout.get(vout_idx as usize) {
+                    miner_input_address = vout
                         .script_pub_key
                         .address
                         .as_ref()
                         .and_then(|addr| addr.clone().require_network(Network::Regtest).ok())
                         .map(|addr| addr.to_string())
                         .unwrap_or_default();
-                    sender_input_value = output_detail.value.to_btc();
+                    miner_input_amount = vout.value.to_btc();
                 }
             }
         }
     }
 
-    for output in &decoded_transaction.vout {
-        let output_address = output
+    // Extract output details from the current transaction
+    for vout in decoded_tx.vout.iter() {
+        let address = vout
             .script_pub_key
             .address
             .as_ref()
             .and_then(|addr| addr.clone().require_network(Network::Regtest).ok())
             .map(|addr| addr.to_string())
             .unwrap_or_default();
-        let output_value = output.value.to_btc();
+        let amount = vout.value.to_btc();
 
-        if output_address == receiver_output_address {
-            receiver_output_value = output_value;
-        } else if !output_address.is_empty() && output_address != receiver_output_address {
-            sender_change_address = output_address;
-            sender_change_value = output_value;
+        if address == trader_address.to_string() {
+            trader_input_amount = amount;
+        } else if !address.is_empty() && address != trader_address.to_string() {
+            miner_change_address = address;
+            miner_change_amount = amount;
         }
     }
 
-    let mut output_file = File::create("out.txt")?;
-    writeln!(output_file, "{transaction_id}")?;
-    writeln!(output_file, "{sender_input_address}")?;
-    writeln!(output_file, "{sender_input_value}")?;
-    writeln!(output_file, "{receiver_output_address}")?;
-    writeln!(output_file, "{receiver_output_value}")?;
-    writeln!(output_file, "{sender_change_address}")?;
-    writeln!(output_file, "{sender_change_value}")?;
-    writeln!(output_file, "{transaction_fee}")?;
-    writeln!(output_file, "{block_height_confirmed}")?;
-    writeln!(output_file, "{}", block_hash_confirmed.unwrap())?;
+    // Write to out.txt in the specified format
+    let mut file = File::create("../out.txt")?;
+    writeln!(file, "{}", txid)?;
+    writeln!(file, "{}", miner_input_address)?;
+    writeln!(file, "{}", miner_input_amount)?;
+    writeln!(file, "{}", trader_input_address)?;
+    writeln!(file, "{}", trader_input_amount)?;
+    writeln!(file, "{}", miner_change_address)?;
+    writeln!(file, "{}", miner_change_amount)?;
+    writeln!(file, "{}", fee)?;
+    writeln!(file, "{}", block_height)?;
+    writeln!(file, "{}", block_hash.unwrap())?;
 
     Ok(())
 }
