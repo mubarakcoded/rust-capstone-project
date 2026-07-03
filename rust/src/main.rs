@@ -164,10 +164,6 @@ fn main() -> bitcoincore_rpc::Result<()> {
     // Step 7: Extract all the transaction details we need
     println!("\n=== Extracting transaction details ===");
 
-    // Get the transaction and block info
-    let tx_result = rpc.get_transaction(&txid, None)?;
-    let raw_tx = rpc.get_raw_transaction(&txid, None)?;
-
     // Figure out what block height this transaction is in
     let block_info = rpc.get_block_info(&confirm_block_hash)?;
     let block_height = block_info.height;
