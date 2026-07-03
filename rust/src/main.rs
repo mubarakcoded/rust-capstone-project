@@ -164,6 +164,15 @@ fn main() -> bitcoincore_rpc::Result<()> {
     // Step 7: Extract all the transaction details we need
     println!("\n=== Extracting transaction details ===");
 
+    // Get the transaction details from the Miner wallet to get the accurate fee
+    let wallet_tx_info: serde_json::Value = miner_rpc.call(
+        "gettransaction",
+        &[json!(txid.to_string()), json!(null), json!(true)],
+    )?;
+
+    // Get the fee from the wallet transaction (this is the accurate value)
+    let tx_fee = wallet_tx_info["fee"].as_f64().unwrap().abs();
+
     // Figure out what block height this transaction is in
     let block_info = rpc.get_block_info(&confirm_block_hash)?;
     let block_height = block_info.height;
@@ -208,9 +217,6 @@ fn main() -> bitcoincore_rpc::Result<()> {
             change_amount = amount;
         }
     }
-
-    // Calculate the fee (input minus outputs)
-    let tx_fee = input_amount - trader_output_amount - change_amount;
 
     // Step 8: Write everything to the output file
     println!("\n=== Writing output to file ===");
