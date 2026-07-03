@@ -215,7 +215,8 @@ fn main() -> bitcoincore_rpc::Result<()> {
     // Step 8: Write everything to the output file
     println!("\n=== Writing output to file ===");
 
-    let output_path = "out.txt";
+    // Write to the project root, not the rust/ directory
+    let output_path = "../out.txt";
     let mut file = File::create(output_path)?;
 
     writeln!(file, "{}", txid)?;
